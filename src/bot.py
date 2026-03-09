@@ -80,15 +80,15 @@ async def scrape(ctx, subreddit: str = None, sort_type: str = 'hot', count: int 
         await ctx.send(f"❌ Invalid count! Must be between 1 and {MAX_POSTS_PER_SCRAPE}")
         return
     
-    is_valid_sub, error_msg = reddit_client.validate_subreddit(subreddit)
+    is_valid_sub, error_msg = await reddit_client.validate_subreddit(subreddit)
     if not is_valid_sub:
         embed = await create_error_embed(subreddit, error_msg)
         await ctx.send(embed=embed)
         return
-    
+
     await ctx.send(f"🔍 Starting scrape: r/{subreddit} | Sort: {sort_type} | Count: {count}")
-    
-    posts, error = reddit_client.get_posts(subreddit, sort_type, count)
+
+    posts, error = await reddit_client.get_posts(subreddit, sort_type, count)
     
     if error:
         embed = await create_error_embed(subreddit, error)

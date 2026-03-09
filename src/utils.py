@@ -66,6 +66,10 @@ def is_adult_content(post):
 
 def setup_logging():
     import logging.config
+    
+    Path('logs').mkdir(exist_ok=True)
+    Path('temp').mkdir(exist_ok=True)
+    
     logging.config.dictConfig({
         'version': 1,
         'disable_existing_loggers': False,
