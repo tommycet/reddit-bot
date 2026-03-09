@@ -105,24 +105,25 @@ async def scrape(ctx, subreddit: str = None, sort_type: str = 'hot', count: int 
         try:
             await status_msg.edit(embed=await create_progress_embed(idx, len(posts), subreddit))
             
-        media_path = None
-        
-        if post.url and not post.is_self:
-            media_path = await download_media(post.url, post.id, post)
+            # Indented this block to be inside the try
+            media_path = None
             
-            embed, media_file, post_url = await create_post_embed(post, media_path)
-            
-            file_to_send = None
-            try:
-                if media_path and media_file:
-                    file_to_send = discord.File(media_file)
+            if post.url and not post.is_self:
+                media_path = await download_media(post.url, post.id, post)
                 
-                await ctx.send(embed=embed, file=file_to_send)
-                success_count += 1
+                embed, media_file, post_url = await create_post_embed(post, media_path)
                 
-            finally:
-                if media_path:
-                    await delete_file(media_path)
+                file_to_send = None
+                try:
+                    if media_path and media_file:
+                        file_to_send = discord.File(media_file)
+                    
+                    await ctx.send(embed=embed, file=file_to_send)
+                    success_count += 1
+                    
+                finally:
+                    if media_path:
+                        await delete_file(media_path)
             
             if idx < len(posts):
                 await asyncio.sleep(POST_DELAY_SECONDS)
