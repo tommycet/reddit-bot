@@ -7,9 +7,9 @@ from src.media_downloader import SUPPORTED_PLATFORMS
 logger = logging.getLogger(__name__)
 
 async def create_post_embed(post, media_path=None):
-    nsfw_tag = "🔞 " if is_adult_content(post) else ""
+    adult_indicator = "🔞 " if is_adult_content(post) else ""
     
-    title = f"{nsfw_tag}{post.title}"
+    title = f"{adult_indicator}{post.title}"
     
     description = ""
     if post.selftext:

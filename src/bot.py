@@ -32,11 +32,14 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-reddit_client = None
+try:
+    reddit_client = RedditClient()
+except Exception as e:
+    reddit_client = None
+    print(f"❌ Failed to initialize Reddit client: {e}")
 
 @bot.event
 async def on_ready():
-    global reddit_client
     logger.info(f'{bot.user} has connected to Discord!')
     print(f'✅ {bot.user} is online and ready!')
     print(f'📝 Use !scrape <subreddit> <sort> <count> to start scraping')
@@ -45,12 +48,8 @@ async def on_ready():
     ensure_temp_dir()
     clean_temp_files()
     
-    try:
-        reddit_client = RedditClient()
+    if reddit_client:
         logger.info("Reddit client initialized successfully")
-    except Exception as e:
-        logger.critical(f"Failed to initialize Reddit client: {e}")
-        print(f"❌ Failed to initialize Reddit client: {e}")
 
 @bot.command(name='scrape')
 async def scrape(ctx, subreddit: str = None, sort_type: str = 'hot', count: int = 5):
@@ -106,10 +105,10 @@ async def scrape(ctx, subreddit: str = None, sort_type: str = 'hot', count: int 
         try:
             await status_msg.edit(embed=await create_progress_embed(idx, len(posts), subreddit))
             
-            media_path = None
-            
-            if post.url and not post.is_self:
-                media_path = await download_media(post.url, post.id)
+        media_path = None
+        
+        if post.url and not post.is_self:
+            media_path = await download_media(post.url, post.id, post)
             
             embed, media_file, post_url = await create_post_embed(post, media_path)
             
@@ -164,7 +163,7 @@ async def help_command(ctx):
     
     embed.add_field(
         name="📺 Supported Platforms",
-        value="YouTube, RedGifs, Imgur, Gfycat, Streamable, Vimeo, and more!",
+        value="YouTube, Imgur, Gfycat, Streamable, Vimeo, and more!",
         inline=False
     )
     

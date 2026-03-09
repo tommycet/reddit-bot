@@ -17,10 +17,38 @@ SUPPORTED_PLATFORMS = {
     'imgur.com'
 }
 
-async def download_media(url, post_id):
+async def download_media(url, post_id, post=None):
     ensure_temp_dir()
     
     try:
+        if post and hasattr(post, 'is_gallery') and post.is_gallery:
+            logger.info(f"Processing Reddit gallery: {url}")
+            gallery_data = post.gallery_data
+            if not gallery_data:
+                logger.warning(f"No gallery data found for {post_id}")
+                return None
+            
+            media_metadata = getattr(post, 'media_metadata', {})
+            if not media_metadata:
+                logger.warning(f"No media metadata for gallery {post_id}")
+                return None
+            
+            first_item = gallery_data['items'][0]
+            media_id = first_item['media_id']
+            
+            if media_id in media_metadata:
+                media_info = media_metadata[media_id]
+                if 's' in media_info and 'u' in media_info['s']:
+                    image_url = media_info['s']['u']
+                    return await download_direct(image_url, post_id)
+            
+            logger.warning(f"Could not extract image from gallery {post_id}")
+            return None
+        
+        if 'reddit.com/gallery/' in url or 'reddit.com/comments/' in url:
+            logger.info(f"Skipping Reddit gallery/comment link: {url}")
+            return None
+        
         parsed_url = urlparse(url)
         domain = parsed_url.netloc.lower().replace('www.', '')
         
@@ -83,9 +111,13 @@ async def download_direct(url, post_id):
     extension = get_file_extension(url)
     output_path = f"temp/{post_id}{extension}"
     
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
                 if response.status != 200:
                     logger.error(f"HTTP {response.status} for {url}")
                     return None
@@ -123,8 +155,6 @@ def get_platform_name(url):
     
     if 'youtube.com' in domain or 'youtu.be' in domain:
         return 'YouTube'
-    elif 'redgifs.com' in domain:
-        return 'RedGifs'
     elif 'gfycat.com' in domain:
         return 'Gfycat'
     elif 'streamable.com' in domain:

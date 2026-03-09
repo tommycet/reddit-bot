@@ -1,6 +1,6 @@
 # Reddit-Discord Bot 🤖
 
-Automatically scrape Reddit posts and send them to Discord with full media support, including external platforms like YouTube, RedGifs, Imgur, and more.
+Automatically scrape Reddit posts and send them to Discord with full media support, including external platforms like YouTube, Imgur, and more.
 
 ## 📋 Table of Contents
 
@@ -22,7 +22,7 @@ Automatically scrape Reddit posts and send them to Discord with full media suppo
 
 ## Overview
 
-This bot allows you to scrape posts from any Reddit subreddit and automatically post them to a Discord channel. It supports all types of content including text, images, videos, and external media from platforms like YouTube, RedGifs, and more. Media files are downloaded temporarily, sent to Discord, and then immediately deleted from the local system.
+This bot allows you to scrape posts from any Reddit subreddit and automatically post them to a Discord channel. It supports all types of content including text, images, videos, and external media from platforms like YouTube, Imgur, and more. Media files are downloaded temporarily, sent to Discord, and then immediately deleted from the local system.
 
 ---
 
@@ -32,13 +32,11 @@ This bot allows you to scrape posts from any Reddit subreddit and automatically 
 ✅ **Multiple Sort Types** - Supports new, rising, hot, and top posts
 ✅ **External Media Support** - Downloads and sends media from:
    - YouTube
-   - RedGifs
    - Imgur
    - Gfycat
    - Streamable
    - Vimeo
    - Direct video/image URLs
-✅ **NSFW Content** - Fully supported with no blocking
 ✅ **Sequential Posting** - Posts are sent one by one with proper delays
 ✅ **Auto Cleanup** - All media files deleted immediately after sending
 ✅ **Discord Embeds** - Reddit-style post formatting
@@ -277,7 +275,6 @@ The bot automatically detects and downloads media from these external platforms:
 | Platform | Type | Notes |
 |----------|------|-------|
 | **YouTube** | Video | Downloads best quality ≤1080p |
-| **RedGifs** | Video/GIF | Full support for adult content |
 | **Imgur** | Image/Video/Album | Supports galleries |
 | **Gfycat** | Video/GIF | High quality downloads |
 | **Streamable** | Video | Fast video downloads |
@@ -337,13 +334,6 @@ reddit-bot/
 - **Reddit:** 60 requests per minute (handled by PRAW)
 - **Discord:** Respects Discord's global rate limits
 - 2-second delay between posts by default (configurable)
-
-### ✅ NSFW Content
-
-- **No filtering or blocking** - All content types are allowed
-- NSFW posts are tagged with 🔞 indicator
-- Discord automatically blurs images in NSFW-marked channels
-- Consider marking your Discord channel as NSFW if scraping adult subreddits
 
 ---
 
