@@ -33,27 +33,36 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 try:
+    logger.info("Initializing Reddit client...")
     reddit_client = RedditClient()
+    logger.info("Reddit client initialized successfully")
 except Exception as e:
     reddit_client = None
+    logger.error(f"Failed to initialize Reddit client: {e}", exc_info=True)
     print(f"❌ Failed to initialize Reddit client: {e}")
 
 @bot.event
 async def on_ready():
     logger.info(f'{bot.user} has connected to Discord!')
+    logger.info(f'✅ {bot.user} is online and ready!')
+    logger.info(f'📝 Use !scrape <subreddit> <sort> <count> to start scraping')
+    logger.info(f'📝 Use !help for more commands')
     print(f'✅ {bot.user} is online and ready!')
     print(f'📝 Use !scrape <subreddit> <sort> <count> to start scraping')
     print(f'📝 Use !help for more commands')
-    
+
     ensure_temp_dir()
     clean_temp_files()
     
-    if reddit_client:
-        logger.info("Reddit client initialized successfully")
+if reddit_client:
+    logger.info("Reddit client is ready for use")
 
 @bot.command(name='scrape')
 async def scrape(ctx, subreddit: str = None, sort_type: str = 'hot', count: int = 5):
+    logger.info(f"Received scrape command: subreddit={subreddit}, sort_type={sort_type}, count={count}")
+    
     if not reddit_client:
+        logger.error("Reddit client not initialized. Check your credentials.")
         await ctx.send("❌ Reddit client not initialized. Check your credentials.")
         return
     
@@ -79,17 +88,21 @@ async def scrape(ctx, subreddit: str = None, sort_type: str = 'hot', count: int 
         await ctx.send(f"❌ Invalid count! Must be between 1 and {MAX_POSTS_PER_SCRAPE}")
         return
     
+    logger.info(f"Validating subreddit: {subreddit}")
     is_valid_sub, error_msg = await reddit_client.validate_subreddit(subreddit)
     if not is_valid_sub:
+        logger.error(f"Subreddit validation failed for r/{subreddit}: {error_msg}")
         embed = await create_error_embed(subreddit, error_msg)
         await ctx.send(embed=embed)
         return
 
     await ctx.send(f"🔍 Starting scrape: r/{subreddit} | Sort: {sort_type} | Count: {count}")
 
+    logger.info(f"Fetching {count} posts from r/{subreddit} (sort: {sort_type})")
     posts, error = await reddit_client.get_posts(subreddit, sort_type, count)
-    
+
     if error:
+        logger.error(f"Failed to fetch posts from r/{subreddit}: {error}")
         embed = await create_error_embed(subreddit, error)
         await ctx.send(embed=embed)
         return

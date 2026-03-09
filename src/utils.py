@@ -66,10 +66,10 @@ def is_adult_content(post):
 
 def setup_logging():
     import logging.config
-    
+
     Path('logs').mkdir(exist_ok=True)
     Path('temp').mkdir(exist_ok=True)
-    
+
     logging.config.dictConfig({
         'version': 1,
         'disable_existing_loggers': False,
@@ -77,22 +77,25 @@ def setup_logging():
             'standard': {
                 'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
             },
+            'detailed': {
+                'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s\n  -> File: %(filename)s:%(lineno)d\n  -> Function: %(funcName)s'
+            },
         },
         'handlers': {
             'console': {
                 'class': 'logging.StreamHandler',
-                'formatter': 'standard',
-                'level': 'INFO',
+                'formatter': 'detailed',
+                'level': 'DEBUG',
             },
             'file': {
                 'class': 'logging.FileHandler',
                 'filename': 'logs/bot.log',
-                'formatter': 'standard',
+                'formatter': 'detailed',
                 'level': 'DEBUG',
             },
         },
         'root': {
             'handlers': ['console', 'file'],
-            'level': 'INFO',
+            'level': 'DEBUG',
         },
     })
