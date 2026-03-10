@@ -33,14 +33,7 @@ This bot allows you to scrape posts from any Reddit subreddit and automatically 
 ✅ **Hybrid Fetching (RSS + PRAW)** - RSS feeds for unlimited rate, PRAW as fallback
 ✅ **Auto Video Compression** - Videos automatically compressed to fit Discord's 8MB limit
 ✅ **Auto GIF Conversion** - Videos under 60s converted to GIF (720p, 30fps)
-✅ **External Media Support** - Downloads and sends media from:
-- YouTube
-- Imgur
-- Gfycat
-- Streamable
-- Vimeo
-- DailyMotion
-- Direct video/image URLs
+✅ **External Media Support** - Downloads and sends media from various platforms
 ✅ **Sequential Posting** - Posts are sent one by one with proper delays
 ✅ **Auto Cleanup** - All media files deleted immediately after sending
 ✅ **Discord Embeds** - Reddit-style post formatting
@@ -58,7 +51,6 @@ Before you begin, ensure you have:
 - ✅ A **Discord account** (for creating the bot)
 - ✅ A **Reddit account** (for API access)
 - ✅ A **Discord server** where you have admin rights
-- ✅ Basic command line knowledge
 
 ---
 
