@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import logging
 import asyncio
+import os
 from src.reddit_client import RedditClient
 from src.media_downloader import download_media
 from src.post_formatter import (
@@ -112,39 +113,63 @@ async def scrape(ctx, subreddit: str = None, sort_type: str = 'hot', count: int 
         return
     
     success_count = 0
+    skipped_count = 0
     status_msg = await ctx.send(embed=await create_progress_embed(0, len(posts), subreddit))
-    
+
     for idx, post in enumerate(posts, 1):
+        media_path = None
         try:
             await status_msg.edit(embed=await create_progress_embed(idx, len(posts), subreddit))
-            
-            # Indented this block to be inside the try
-            media_path = None
-            
+
+            # Download media (with automatic compression and GIF conversion)
             if post.url and not post.is_self:
+                logger.info(f"Processing post {idx}/{len(posts)}: {post.url}")
                 media_path = await download_media(post.url, post.id, post)
                 
-                embed, media_file, post_url = await create_post_embed(post, media_path)
-                
-                file_to_send = None
+                # Check if download/conversion succeeded
+                if media_path is None:
+                    logger.warning(f"Post {idx}: Media download/conversion failed, skipping")
+                    skipped_count += 1
+                    continue
+
+            embed, media_file, post_url = await create_post_embed(post, media_path)
+
+            file_to_send = None
+            if media_path and media_file:
+                file_to_send = discord.File(media_file)
+
+            # Send message to Discord
+            await ctx.send(embed=embed, file=file_to_send)
+            success_count += 1
+            logger.info(f"Post {idx} sent successfully")
+
+            # IMMEDIATELY delete media after successful send
+            if media_path and os.path.exists(media_path):
                 try:
-                    if media_path and media_file:
-                        file_to_send = discord.File(media_file)
-                    
-                    await ctx.send(embed=embed, file=file_to_send)
-                    success_count += 1
-                    
-                finally:
-                    if media_path:
-                        await delete_file(media_path)
-            
+                    os.remove(media_path)
+                    logger.info(f"Media deleted immediately after send: {media_path}")
+                except Exception as e:
+                    logger.error(f"Failed to delete media {media_path}: {e}")
+
+            # Delay between posts
             if idx < len(posts):
                 await asyncio.sleep(POST_DELAY_SECONDS)
-                
+
         except Exception as e:
             logger.error(f"Error processing post {post.id}: {e}")
             await ctx.send(f"⚠️ Error processing post: {str(e)[:100]}")
+            # Clean up media on error
+            if media_path and os.path.exists(media_path):
+                try:
+                    os.remove(media_path)
+                    logger.info(f"Media deleted on error: {media_path}")
+                except Exception as delete_error:
+                    logger.error(f"Failed to delete media on error: {delete_error}")
             continue
+    
+    # Log summary
+    if skipped_count > 0:
+        logger.info(f"Scrape complete: {success_count} posted, {skipped_count} skipped")
     
     await status_msg.delete()
     await ctx.send(embed=await create_completion_embed(success_count, subreddit))
