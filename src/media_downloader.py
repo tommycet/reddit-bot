@@ -88,8 +88,10 @@ async def download_media(url, post_id, post=None):
                     filepath = await download_with_ytdlp(url, post_id)
 
         elif 'reddit.com' in url and '/gallery/' in url:
-            logger.info(f"Skipping Reddit gallery link: {url}")
-            return None
+            # Gallery URL that wasn't resolved to individual images by _fetch_original_url.
+            # Try yt-dlp as a last resort — it can sometimes extract gallery images.
+            logger.info(f"Trying yt-dlp for unresolved gallery URL: {url}")
+            filepath = await download_with_ytdlp(url, post_id)
 
         elif 'reddit.com' in url and '/comments/' in url:
             # This might be a post with an external embed (YouTube, RedGifs, etc.)

@@ -164,6 +164,26 @@ class RedditRSSClient:
                     submission = self.praw_reddit.submission(url=f"https://www.reddit.com{permalink}")
                     url = submission.url
                     
+                    # Check for gallery post
+                    if hasattr(submission, 'is_gallery') and submission.is_gallery:
+                        media_metadata = getattr(submission, 'media_metadata', {}) or {}
+                        gallery_data = getattr(submission, 'gallery_data', None)
+                        if gallery_data and 'items' in gallery_data:
+                            for item in gallery_data['items']:
+                                media_id = item.get('media_id')
+                                if media_id and media_id in media_metadata:
+                                    media_info = media_metadata[media_id]
+                                    if 's' in media_info and 'u' in media_info['s']:
+                                        img_url = media_info['s']['u'].replace('&amp;', '&')
+                                        logger.info(f"PRAW found gallery image: {img_url}")
+                                        return img_url
+                        # Fallback: try any image in media_metadata
+                        for mid, minfo in media_metadata.items():
+                            if 's' in minfo and 'u' in minfo['s']:
+                                img_url = minfo['s']['u'].replace('&amp;', '&')
+                                logger.info(f"PRAW found gallery image (fallback): {img_url}")
+                                return img_url
+                    
                     # Check for Reddit video
                     if hasattr(submission, 'media') and submission.media:
                         reddit_video = submission.media.get('reddit_video', {})
@@ -181,8 +201,8 @@ class RedditRSSClient:
                                 logger.info(f"PRAW found DASH fallback URL: {fallback_url}")
                                 return fallback_url
                     
-                    # Return the URL if it's not a Reddit comment link
-                    if url and not url.startswith('https://www.reddit.com/r/'):
+                    # Return the URL if it's not a Reddit link
+                    if url and not url.startswith('https://www.reddit.com'):
                         logger.info(f"PRAW found original URL: {url}")
                         return url
                     
@@ -300,6 +320,28 @@ class RedditRSSClient:
         
         post_data = data[0]['data']['children'][0]['data']
         original_url = post_data.get('url', '')
+        
+        # Check for gallery post — extract first image
+        if post_data.get('is_gallery'):
+            media_metadata = post_data.get('media_metadata', {}) or {}
+            gallery_data = post_data.get('gallery_data', {}) or {}
+            if gallery_data and 'items' in gallery_data:
+                for item in gallery_data['items']:
+                    media_id = item.get('media_id')
+                    if media_id and media_id in media_metadata:
+                        media_info = media_metadata[media_id]
+                        if 's' in media_info and 'u' in media_info['s']:
+                            img_url = media_info['s']['u'].replace('&amp;', '&')
+                            logger.info(f"Found gallery image: {img_url}")
+                            return img_url
+            # Fallback: try any image in media_metadata
+            for mid, minfo in media_metadata.items():
+                if 's' in minfo and 'u' in minfo['s']:
+                    img_url = minfo['s']['u'].replace('&amp;', '&')
+                    logger.info(f"Found gallery image (fallback): {img_url}")
+                    return img_url
+            logger.warning(f"Gallery post but no images found in metadata")
+            return None
         
         # Always check for Reddit-hosted video (secure_media/media)
         secure_media = post_data.get('secure_media', {}) or {}
