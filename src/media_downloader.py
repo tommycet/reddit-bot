@@ -66,10 +66,27 @@ async def download_media(url, post_id, post=None):
             logger.error(f"Failed to download Reddit direct image: {url}")
             return None
         
-        # v.redd.it URLs need yt-dlp to resolve to actual video
+        # v.redd.it URLs need special handling
         if 'v.redd.it' in url:
-            logger.info(f"Resolving v.redd.it URL with yt-dlp: {url}")
-            filepath = await download_with_ytdlp(url, post_id)
+            # DASH fallback URLs (e.g. .../DASH_720.mp4?source=fallback) can be downloaded directly
+            if '/DASH_' in url or '.mp4' in url.split('?')[0]:
+                logger.info(f"Downloading DASH fallback URL directly: {url}")
+                filepath = await download_direct(url, post_id)
+                if filepath and os.path.exists(filepath):
+                    logger.info(f"DASH video downloaded: {filepath}")
+                    return filepath
+                logger.warning(f"Direct DASH download failed, trying yt-dlp...")
+            
+            # For short v.redd.it URLs, use the full Reddit post URL with yt-dlp
+            # (short URLs get 403'd with yt-dlp's generic extractor)
+            if post and hasattr(post, 'permalink') and post.permalink:
+                reddit_url = f"https://www.reddit.com{post.permalink}"
+                logger.info(f"Using full Reddit URL for yt-dlp: {reddit_url}")
+                filepath = await download_with_ytdlp(reddit_url, post_id)
+            else:
+                logger.info(f"Trying yt-dlp with v.redd.it URL: {url}")
+                filepath = await download_with_ytdlp(url, post_id)
+            
             if filepath and os.path.exists(filepath):
                 logger.info(f"v.redd.it video downloaded: {filepath}")
                 return filepath
@@ -169,6 +186,9 @@ async def download_with_ytdlp(url, post_id):
         'noplaylist': True,
         'max_filesize': MAX_FILE_SIZE_BYTES,
         'merge_output_format': 'mp4',
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
     }
     ydl_opts['format'] = ydl_opts['format'].format(MAX_FILE_SIZE_BYTES)
 

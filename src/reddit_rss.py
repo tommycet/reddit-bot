@@ -1,6 +1,7 @@
 import feedparser
 import logging
 import re
+import aiohttp
 from datetime import datetime
 from urllib.parse import urlparse
 from typing import List, Tuple, Optional
@@ -90,6 +91,73 @@ class RedditRSSClient:
         # Return None for thumbnail-only URLs (external-preview.redd.it are thumbnails)
         return None
 
+    async def _fetch_original_url(self, permalink: str) -> Optional[str]:
+        """
+        Fetch the original external URL from Reddit's .json API.
+        This returns the original URL that was posted (YouTube, redgifs, etc.)
+        """
+        try:
+            json_url = f"https://www.reddit.com{permalink}.json"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(json_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status != 200:
+                        logger.warning(f"Failed to fetch .json for {permalink}: HTTP {response.status}")
+                        return None
+                    
+                    data = await response.json()
+                    
+                    if not data or len(data) < 2:
+                        return None
+                    
+                    # Get the post data from the JSON response
+                    post_data = data[0]['data']['children'][0]['data']
+                    
+                    # Get the original URL that was posted
+                    original_url = post_data.get('url', '')
+                    
+                    # Always check for Reddit-hosted video (secure_media/media)
+                    # regardless of URL format, since v.redd.it URLs also need this
+                    secure_media = post_data.get('secure_media', {}) or {}
+                    media = post_data.get('media', {}) or {}
+                    
+                    # Check for Reddit video (works for both reddit.com and v.redd.it URLs)
+                    reddit_video = secure_media.get('reddit_video') or media.get('reddit_video')
+                    if reddit_video:
+                        fallback_url = reddit_video.get('fallback_url')
+                        if fallback_url:
+                            logger.info(f"Found DASH fallback URL: {fallback_url}")
+                            return fallback_url
+                    
+                    if original_url:
+                        if original_url.startswith('https://www.reddit.com'):
+                            # Check for embedded media (YouTube, etc.)
+                            oembed = secure_media.get('oembed') or media.get('oembed')
+                            if oembed:
+                                provider_url = oembed.get('provider_url', '')
+                                if 'youtube' in provider_url.lower():
+                                    return oembed.get('url')
+                            
+                            return None
+                        elif 'v.redd.it' in original_url:
+                            # Short v.redd.it URL without DASH fallback found above
+                            # Return None so we fall back to yt-dlp with full Reddit URL
+                            logger.warning(f"v.redd.it URL without fallback: {original_url}")
+                            return None
+                        else:
+                            # It's an external URL - this is what we want!
+                            return original_url
+                    
+                    # Also check for domain from permalink if no URL found
+                    return None
+                    
+        except Exception as e:
+            logger.warning(f"Error fetching .json for {permalink}: {e}")
+            return None
+
     def _parse_description(self, description: str) -> dict:
         data = {
             'score': 0,
@@ -168,16 +236,31 @@ class RedditRSSClient:
                     link = entry.get('link', '')
                     permalink = link.replace('https://www.reddit.com', '')
 
-                    # Determine if this is a self post
-                    is_self = 'selftext=' in entry.get('description', '') or '/comments/' in link
+                    # Extract actual media URL from the entry
+                    media_url = self._extract_media_url(entry)
+                    
+                    # Try to get original external URL from Reddit's .json API
+                    original_url = await self._fetch_original_url(permalink)
+                    
+                    # Determine is_self: true only if no media URL was found anywhere
+                    # '/comments/' is in ALL Reddit links, so it can't be used as an indicator
+                    has_media = (media_url is not None) or (original_url is not None)
+                    is_self = desc_data.get('is_self', False) and not has_media
+                    
                     # Check if it's a gallery
                     is_gallery = '/gallery/' in link
 
-                    # Extract actual media URL from the entry
-                    media_url = self._extract_media_url(entry)
-                    logger.info(f"RSS Post: link={link}, media_url={media_url}")
-                    # Use media URL if found, otherwise use the Reddit post link
-                    url = media_url if media_url else link
+                    if original_url:
+                        logger.info(f"Found original URL for {permalink}: {original_url}")
+                        url = original_url
+                    elif media_url:
+                        # Fall back to RSS media URL if no original URL found
+                        url = media_url
+                    else:
+                        # Use Reddit post link as last resort
+                        url = link
+                    
+                    logger.info(f"RSS Post: link={link}, is_self={is_self}, original_url={original_url}, media_url={media_url}, final_url={url}")
 
                     author = entry.get('author', '[deleted]')
                     if 'submitted by' in entry.get('description', ''):

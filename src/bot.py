@@ -122,14 +122,16 @@ async def scrape(ctx, subreddit: str = None, sort_type: str = 'hot', count: int 
         try:
             await status_msg.edit(embed=await create_progress_embed(idx, len(posts), subreddit))
 
-            if post.url and not post.is_self:
+            if post.is_self:
+                logger.info(f"Post {idx}: Self/text post, sending without media")
+            elif post.url:
                 logger.info(f"Processing post {idx}/{len(posts)}: {post.url}")
                 media_path = await download_media(post.url, post.id, post)
-
-            if media_path is None:
-                logger.warning(f"Post {idx}: Media download/conversion failed, skipping")
-                skipped_count += 1
-                continue
+                
+                if media_path is None:
+                    logger.warning(f"Post {idx}: Media download/conversion failed for {post.url}, skipping")
+                    skipped_count += 1
+                    continue
 
             embed, media_file, post_url = await create_post_embed(post, media_path)
 

@@ -196,36 +196,19 @@ class RedditHybridClient:
     
     async def get_posts(self, subreddit_name, sort_type, limit):
         """
-        Get posts using RSS first, fallback to PRAW
+        Get posts using RSS with .json API for original URLs
         """
         logger.info(f"Fetching posts: r/{subreddit_name} | sort={sort_type} | limit={limit}")
 
-        # Step 1: Try RSS first (primary method)
+        # Use RSS with .json API to get original URLs
         logger.info(f"Attempting RSS fetch for r/{subreddit_name}...")
         posts, error = await self.rss_client.fetch_posts(subreddit_name, sort_type, limit)
 
         if not error and posts:
-            # Check if RSS returned posts with only thumbnail URLs (not direct media)
-            has_direct_media = any(
-                p.url and ('v.redd.it' in p.url or 'i.redd.it' in p.url or '.mp4' in p.url.lower() or '.webm' in p.url.lower())
-                for p in posts
-            )
-            
-            # If no direct media URLs found, use PRAW instead (RSS doesn't provide video URLs)
-            if not has_direct_media:
-                logger.warning(f"RSS returned posts without direct media URLs, using PRAW fallback")
-                posts, error = await self.praw_client.fetch_with_retry(subreddit_name, sort_type, limit)
-                if posts:
-                    logger.info(f"PRAW fallback successful: {len(posts)} posts from r/{subreddit_name}")
-                    return posts, None
-                else:
-                    logger.error(f"PRAW fallback failed for r/{subreddit_name}: {error}")
-                    return None, error
-            
             logger.info(f"RSS fetch successful: {len(posts)} posts from r/{subreddit_name}")
             return posts, None
 
-        # Step 2: RSS failed, fallback to PRAW
+        # RSS failed, try PRAW as last resort
         logger.warning(f"RSS failed for r/{subreddit_name}: {error}")
         logger.info(f"Falling back to PRAW for r/{subreddit_name}...")
 
