@@ -1,7 +1,9 @@
 import feedparser
 import logging
 import re
+import asyncio
 import aiohttp
+import time
 from datetime import datetime
 from urllib.parse import urlparse
 from typing import List, Tuple, Optional
@@ -41,8 +43,18 @@ class RSSPost:
 class RedditRSSClient:
     BASE_RSS_URL = "https://www.reddit.com/r/{subreddit}/{sort}.rss"
 
-    def __init__(self):
-        logger.info("RedditRSSClient initialized")
+    def __init__(self, praw_reddit=None, reddit_credentials=None):
+        self.praw_reddit = praw_reddit
+        
+        # OAuth2 credentials for password-based auth fallback
+        self._oauth_token = None
+        self._oauth_token_expiry = 0
+        self._reddit_creds = reddit_credentials or {}
+        
+        has_oauth = all(self._reddit_creds.get(k) for k in ['client_id', 'client_secret', 'username', 'password'])
+        logger.info("RedditRSSClient initialized (PRAW fallback: %s, OAuth fallback: %s)",
+                    'enabled' if praw_reddit else 'disabled',
+                    'enabled' if has_oauth else 'disabled')
 
     def _get_rss_url(self, subreddit: str, sort_type: str) -> str:
         sort_type = sort_type.lower()
@@ -96,9 +108,32 @@ class RedditRSSClient:
 
     async def _fetch_original_url(self, permalink: str) -> Optional[str]:
         """
-        Fetch the original external URL from Reddit's .json API.
-        This returns the original URL that was posted (YouTube, redgifs, etc.)
+        Fetch the original external URL with triple fallback:
+        1. Unauthenticated .json API (fast, works for most posts)
+        2. PRAW authenticated client (handles NSFW, requires PRAW setup)
+        3. OAuth2 password grant (handles NSFW, uses username/password)
         """
+        # Try 1: Unauthenticated .json API
+        result = await self._fetch_original_url_json(permalink)
+        if result:
+            return result
+        
+        # Try 2: PRAW (authenticated)
+        if self.praw_reddit:
+            result = await self._fetch_original_url_praw(permalink)
+            if result:
+                return result
+        
+        # Try 3: OAuth2 password grant (authenticated)
+        if self._reddit_creds:
+            result = await self._fetch_original_url_oauth(permalink)
+            if result:
+                return result
+        
+        return None
+    
+    async def _fetch_original_url_json(self, permalink: str) -> Optional[str]:
+        """Try the unauthenticated .json API first"""
         try:
             json_url = f"https://www.reddit.com{permalink}.json"
             headers = {
@@ -108,58 +143,193 @@ class RedditRSSClient:
             async with aiohttp.ClientSession() as session:
                 async with session.get(json_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
                     if response.status != 200:
-                        logger.warning(f"Failed to fetch .json for {permalink}: HTTP {response.status}")
+                        logger.warning(f".json API failed for {permalink}: HTTP {response.status}")
                         return None
                     
                     data = await response.json()
-                    
-                    if not data or len(data) < 2:
-                        return None
-                    
-                    # Get the post data from the JSON response
-                    post_data = data[0]['data']['children'][0]['data']
-                    
-                    # Get the original URL that was posted
-                    original_url = post_data.get('url', '')
-                    
-                    # Always check for Reddit-hosted video (secure_media/media)
-                    # regardless of URL format, since v.redd.it URLs also need this
-                    secure_media = post_data.get('secure_media', {}) or {}
-                    media = post_data.get('media', {}) or {}
-                    
-                    # Check for Reddit video (works for both reddit.com and v.redd.it URLs)
-                    reddit_video = secure_media.get('reddit_video') or media.get('reddit_video')
-                    if reddit_video:
-                        fallback_url = reddit_video.get('fallback_url')
-                        if fallback_url:
-                            logger.info(f"Found DASH fallback URL: {fallback_url}")
-                            return fallback_url
-                    
-                    if original_url:
-                        if original_url.startswith('https://www.reddit.com'):
-                            # Check for embedded media (YouTube, etc.)
-                            oembed = secure_media.get('oembed') or media.get('oembed')
-                            if oembed:
-                                provider_url = oembed.get('provider_url', '')
-                                if 'youtube' in provider_url.lower():
-                                    return oembed.get('url')
-                            
-                            return None
-                        elif 'v.redd.it' in original_url:
-                            # Short v.redd.it URL without DASH fallback found above
-                            # Return None so we fall back to yt-dlp with full Reddit URL
-                            logger.warning(f"v.redd.it URL without fallback: {original_url}")
-                            return None
-                        else:
-                            # It's an external URL - this is what we want!
-                            return original_url
-                    
-                    # Also check for domain from permalink if no URL found
-                    return None
+                    return self._parse_post_data(data, permalink)
                     
         except Exception as e:
             logger.warning(f"Error fetching .json for {permalink}: {e}")
             return None
+    
+    async def _fetch_original_url_praw(self, permalink: str) -> Optional[str]:
+        """Fallback: use authenticated PRAW to get the submission URL (handles NSFW)"""
+        try:
+            logger.info(f"Using PRAW fallback for {permalink}")
+            loop = asyncio.get_event_loop()
+            
+            def fetch_with_praw():
+                try:
+                    submission = self.praw_reddit.submission(url=f"https://www.reddit.com{permalink}")
+                    url = submission.url
+                    
+                    # Check for Reddit video
+                    if hasattr(submission, 'media') and submission.media:
+                        reddit_video = submission.media.get('reddit_video', {})
+                        if reddit_video:
+                            fallback_url = reddit_video.get('fallback_url')
+                            if fallback_url:
+                                logger.info(f"PRAW found DASH fallback URL: {fallback_url}")
+                                return fallback_url
+                    
+                    if hasattr(submission, 'secure_media') and submission.secure_media:
+                        reddit_video = submission.secure_media.get('reddit_video', {})
+                        if reddit_video:
+                            fallback_url = reddit_video.get('fallback_url')
+                            if fallback_url:
+                                logger.info(f"PRAW found DASH fallback URL: {fallback_url}")
+                                return fallback_url
+                    
+                    # Return the URL if it's not a Reddit comment link
+                    if url and not url.startswith('https://www.reddit.com/r/'):
+                        logger.info(f"PRAW found original URL: {url}")
+                        return url
+                    
+                    return None
+                except Exception as e:
+                    logger.warning(f"PRAW submission fetch failed: {e}")
+                    return None
+            
+            return await loop.run_in_executor(None, fetch_with_praw)
+            
+        except Exception as e:
+            logger.warning(f"PRAW fallback error for {permalink}: {e}")
+            return None
+
+    async def _get_oauth_token(self) -> Optional[str]:
+        """Get or refresh OAuth2 access token using password grant"""
+        # Return cached token if still valid
+        if self._oauth_token and time.time() < self._oauth_token_expiry:
+            return self._oauth_token
+        
+        client_id = self._reddit_creds.get('client_id')
+        client_secret = self._reddit_creds.get('client_secret')
+        username = self._reddit_creds.get('username')
+        password = self._reddit_creds.get('password')
+        user_agent = self._reddit_creds.get('user_agent', 'RedditDiscordBot/1.0')
+        
+        if not all([client_id, client_secret, username, password]):
+            return None
+        
+        try:
+            auth = aiohttp.BasicAuth(client_id, client_secret)
+            headers = {'User-Agent': user_agent}
+            data = {
+                'grant_type': 'password',
+                'username': username,
+                'password': password,
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    'https://www.reddit.com/api/v1/access_token',
+                    auth=auth,
+                    headers=headers,
+                    data=data,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status != 200:
+                        logger.warning(f"OAuth token request failed: HTTP {response.status}")
+                        return None
+                    
+                    token_data = await response.json()
+                    
+                    if 'access_token' not in token_data:
+                        logger.warning(f"OAuth token response missing access_token: {token_data.get('error', 'unknown')}")
+                        return None
+                    
+                    self._oauth_token = token_data['access_token']
+                    # Cache for 50 minutes (tokens last 60 min)
+                    self._oauth_token_expiry = time.time() + 3000
+                    logger.info("OAuth2 access token obtained successfully")
+                    return self._oauth_token
+                    
+        except Exception as e:
+            logger.warning(f"OAuth token error: {e}")
+            return None
+
+    async def _fetch_original_url_oauth(self, permalink: str) -> Optional[str]:
+        """Fallback: use OAuth2 password auth to access the Reddit API (handles NSFW)"""
+        try:
+            token = await self._get_oauth_token()
+            if not token:
+                return None
+            
+            logger.info(f"Using OAuth2 auth for {permalink}")
+            # Use oauth.reddit.com with Bearer token (authenticated endpoint)
+            json_url = f"https://oauth.reddit.com{permalink}.json"
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'User-Agent': self._reddit_creds.get('user_agent', 'RedditDiscordBot/1.0'),
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(json_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 401:
+                        # Token expired, clear cache and retry once
+                        logger.warning("OAuth token expired, refreshing...")
+                        self._oauth_token = None
+                        self._oauth_token_expiry = 0
+                        token = await self._get_oauth_token()
+                        if not token:
+                            return None
+                        headers['Authorization'] = f'Bearer {token}'
+                        async with session.get(json_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as retry_response:
+                            if retry_response.status != 200:
+                                logger.warning(f"OAuth retry failed for {permalink}: HTTP {retry_response.status}")
+                                return None
+                            data = await retry_response.json()
+                            return self._parse_post_data(data, permalink)
+                    
+                    if response.status != 200:
+                        logger.warning(f"OAuth .json API failed for {permalink}: HTTP {response.status}")
+                        return None
+                    
+                    data = await response.json()
+                    return self._parse_post_data(data, permalink)
+                    
+        except Exception as e:
+            logger.warning(f"OAuth fallback error for {permalink}: {e}")
+            return None
+
+    def _parse_post_data(self, data, permalink: str) -> Optional[str]:
+        """Parse post data from .json API response"""
+        if not data or len(data) < 2:
+            return None
+        
+        post_data = data[0]['data']['children'][0]['data']
+        original_url = post_data.get('url', '')
+        
+        # Always check for Reddit-hosted video (secure_media/media)
+        secure_media = post_data.get('secure_media', {}) or {}
+        media = post_data.get('media', {}) or {}
+        
+        # Check for Reddit video
+        reddit_video = secure_media.get('reddit_video') or media.get('reddit_video')
+        if reddit_video:
+            fallback_url = reddit_video.get('fallback_url')
+            if fallback_url:
+                logger.info(f"Found DASH fallback URL: {fallback_url}")
+                return fallback_url
+        
+        if original_url:
+            if original_url.startswith('https://www.reddit.com'):
+                # Check for embedded media (YouTube, etc.)
+                oembed = secure_media.get('oembed') or media.get('oembed')
+                if oembed:
+                    provider_url = oembed.get('provider_url', '')
+                    if 'youtube' in provider_url.lower():
+                        return oembed.get('url')
+                return None
+            elif 'v.redd.it' in original_url:
+                logger.warning(f"v.redd.it URL without fallback: {original_url}")
+                return None
+            else:
+                # External URL (i.redd.it, youtube, redgifs, etc.)
+                return original_url
+        
+        return None
 
     def _parse_description(self, description: str) -> dict:
         data = {

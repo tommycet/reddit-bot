@@ -9,6 +9,8 @@ from config import (
     REDDIT_CLIENT_ID,
     REDDIT_CLIENT_SECRET,
     REDDIT_USER_AGENT,
+    REDDIT_USERNAME,
+    REDDIT_PASSWORD,
     VALID_SORT_TYPES
 )
 from src.reddit_rss import RedditRSSClient
@@ -169,9 +171,21 @@ class RedditHybridClient:
     
     def __init__(self):
         logger.info("Initializing RedditHybridClient...")
-        self.rss_client = RedditRSSClient()
         self.praw_client = RedditPRAWClient()
-        logger.info("RedditHybridClient initialized (RSS primary, PRAW fallback)")
+        
+        reddit_credentials = {
+            'client_id': REDDIT_CLIENT_ID,
+            'client_secret': REDDIT_CLIENT_SECRET,
+            'username': REDDIT_USERNAME,
+            'password': REDDIT_PASSWORD,
+            'user_agent': REDDIT_USER_AGENT,
+        }
+        
+        self.rss_client = RedditRSSClient(
+            praw_reddit=self.praw_client.reddit,
+            reddit_credentials=reddit_credentials
+        )
+        logger.info("RedditHybridClient initialized (RSS primary with PRAW + OAuth auth, PRAW fallback)")
     
     def _is_subreddit_cached(self, subreddit_name):
         """Check if subreddit is in cache and not expired"""
