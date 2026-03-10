@@ -176,29 +176,41 @@ async def download_with_ytdlp(url, post_id):
     if extension == '.jpg' or extension == '.jpeg' or extension == '.png':
         return await download_direct(url, post_id)
 
+    output_template = f"temp/{post_id}.%(ext)s"
     output_path = f"temp/{post_id}.mp4"
 
     ydl_opts = {
-        'format': 'bestvideo[height<=1080][filesize<{0}]+bestaudio/best[height<=1080][filesize<{0}]/best[filesize<{0}]/best',
-        'outtmpl': output_path,
+        # Don't filter by filesize — most platforms don't report it in metadata,
+        # causing zero format matches. Post-download size check handles this instead.
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+        'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
-        'max_filesize': MAX_FILE_SIZE_BYTES,
         'merge_output_format': 'mp4',
+        'socket_timeout': 30,
+        'retries': 3,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
     }
-    ydl_opts['format'] = ydl_opts['format'].format(MAX_FILE_SIZE_BYTES)
 
     def download():
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+                info = ydl.extract_info(url, download=True)
+                # Get the actual downloaded filename (extension might differ)
+                if info:
+                    downloaded_file = ydl.prepare_filename(info)
+                    # yt-dlp might merge to .mp4
+                    if os.path.exists(output_path):
+                        return output_path
+                    # Check if the file exists with a different extension
+                    if downloaded_file and os.path.exists(downloaded_file):
+                        return downloaded_file
             return output_path
         except Exception as e:
-            logger.error(f"yt-dlp error: {e}")
+            logger.error(f"yt-dlp error for {url}: {e}")
             return None
 
     loop = asyncio.get_event_loop()
@@ -208,6 +220,15 @@ async def download_with_ytdlp(url, post_id):
         logger.info(f"Downloaded with yt-dlp: {filepath}")
         return filepath
 
+    # Check if the file was saved with a different name pattern
+    import glob
+    matches = glob.glob(f"temp/{post_id}.*")
+    if matches:
+        filepath = matches[0]
+        logger.info(f"Found downloaded file: {filepath}")
+        return filepath
+
+    logger.warning(f"yt-dlp download produced no file for: {url}")
     return None
 
 async def download_direct(url, post_id):
