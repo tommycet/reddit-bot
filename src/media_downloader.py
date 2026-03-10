@@ -56,7 +56,7 @@ async def download_media(url, post_id, post=None):
 
         logger.info(f"download_media called: url={url}, post_id={post_id}")
 
-        # Handle Reddit direct media URLs (i.redd.it for images, v.redd.it for videos)
+        # Handle Reddit direct media URLs (i.redd.it for images)
         if 'i.redd.it' in url:
             logger.info(f"Downloading Reddit direct image: {url}")
             filepath = await download_direct(url, post_id)
@@ -66,7 +66,9 @@ async def download_media(url, post_id, post=None):
             logger.error(f"Failed to download Reddit direct image: {url}")
             return None
         
-        # v.redd.it URLs need special handling
+        # === Download phase ===
+        filepath = None
+        
         if 'v.redd.it' in url:
             # DASH fallback URLs (e.g. .../DASH_720.mp4?source=fallback) can be downloaded directly
             if '/DASH_' in url or '.mp4' in url.split('?')[0]:
@@ -74,43 +76,41 @@ async def download_media(url, post_id, post=None):
                 filepath = await download_direct(url, post_id)
                 if filepath and os.path.exists(filepath):
                     logger.info(f"DASH video downloaded: {filepath}")
-                    return filepath
-                logger.warning(f"Direct DASH download failed, trying yt-dlp...")
             
-            # For short v.redd.it URLs, use the full Reddit post URL with yt-dlp
-            # (short URLs get 403'd with yt-dlp's generic extractor)
-            if post and hasattr(post, 'permalink') and post.permalink:
-                reddit_url = f"https://www.reddit.com{post.permalink}"
-                logger.info(f"Using full Reddit URL for yt-dlp: {reddit_url}")
-                filepath = await download_with_ytdlp(reddit_url, post_id)
-            else:
-                logger.info(f"Trying yt-dlp with v.redd.it URL: {url}")
-                filepath = await download_with_ytdlp(url, post_id)
-            
-            if filepath and os.path.exists(filepath):
-                logger.info(f"v.redd.it video downloaded: {filepath}")
-                return filepath
-            logger.error(f"Failed to download v.redd.it video: {url}")
+            # If direct download failed or it's a short v.redd.it URL, try yt-dlp
+            if not filepath or not os.path.exists(filepath):
+                if post and hasattr(post, 'permalink') and post.permalink:
+                    reddit_url = f"https://www.reddit.com{post.permalink}"
+                    logger.info(f"Using full Reddit URL for yt-dlp: {reddit_url}")
+                    filepath = await download_with_ytdlp(reddit_url, post_id)
+                else:
+                    logger.info(f"Trying yt-dlp with v.redd.it URL: {url}")
+                    filepath = await download_with_ytdlp(url, post_id)
+
+        elif 'reddit.com/gallery/' in url:
+            logger.info(f"Skipping Reddit gallery link: {url}")
             return None
 
-        # Skip Reddit gallery/comment links but allow direct media URLs
-        if 'reddit.com/gallery/' in url or 'reddit.com/comments/' in url:
-            logger.info(f"Skipping Reddit gallery/comment link: {url}")
-            return None
-
-        logger.info(f"URL domain check: {url} -> is_external will be checked")
-
-        parsed_url = urlparse(url)
-        domain = parsed_url.netloc.lower().replace('www.', '')
-
-        is_external = any(platform in domain for platform in SUPPORTED_PLATFORMS)
-
-        # Download media
-        if is_external:
+        elif 'reddit.com/comments/' in url:
+            # This might be a post with an external embed (YouTube, RedGifs, etc.)
+            # where the .json API failed to return the original URL.
+            # Try yt-dlp with the Reddit URL — it can extract embedded videos.
+            logger.info(f"Trying yt-dlp for Reddit comment URL (may have external embed): {url}")
             filepath = await download_with_ytdlp(url, post_id)
-        else:
-            filepath = await download_direct(url, post_id)
 
+        else:
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc.lower().replace('www.', '')
+            is_external = any(platform in domain for platform in SUPPORTED_PLATFORMS)
+
+            logger.info(f"URL domain check: {url} -> is_external={is_external}")
+
+            if is_external:
+                filepath = await download_with_ytdlp(url, post_id)
+            else:
+                filepath = await download_direct(url, post_id)
+
+        # === Post-processing phase ===
         if not filepath or not os.path.exists(filepath):
             logger.warning(f"Download failed for {url}")
             return None

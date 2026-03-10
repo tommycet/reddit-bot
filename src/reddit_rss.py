@@ -196,7 +196,9 @@ class RedditRSSClient:
             except ValueError:
                 pass
 
-        if 'self text:' in description.lower() or 'submitted by' in description.lower():
+        # Only check for actual self-text indicators
+        # 'submitted by' is in ALL Reddit RSS entries, so it's NOT a valid self-post indicator
+        if 'self text:' in description.lower() or '<!-- sc_off -->' in description.lower():
             data['is_self'] = True
         selftext_match = re.search(r'self text:\s*(.*?)(?:<br/>|$)', description, re.DOTALL)
         if selftext_match:
