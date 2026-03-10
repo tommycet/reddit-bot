@@ -54,18 +54,34 @@ async def download_media(url, post_id, post=None):
             logger.warning(f"Could not extract image from gallery {post_id}")
             return None
 
+        logger.info(f"download_media called: url={url}, post_id={post_id}")
+
         # Handle Reddit direct media URLs (i.redd.it for images, v.redd.it for videos)
-        if 'i.redd.it' in url or 'v.redd.it' in url:
-            logger.info(f"Downloading Reddit direct media: {url}")
+        if 'i.redd.it' in url:
+            logger.info(f"Downloading Reddit direct image: {url}")
             filepath = await download_direct(url, post_id)
             if filepath and os.path.exists(filepath):
+                logger.info(f"Reddit direct image downloaded: {filepath}")
                 return filepath
+            logger.error(f"Failed to download Reddit direct image: {url}")
+            return None
+        
+        # v.redd.it URLs need yt-dlp to resolve to actual video
+        if 'v.redd.it' in url:
+            logger.info(f"Resolving v.redd.it URL with yt-dlp: {url}")
+            filepath = await download_with_ytdlp(url, post_id)
+            if filepath and os.path.exists(filepath):
+                logger.info(f"v.redd.it video downloaded: {filepath}")
+                return filepath
+            logger.error(f"Failed to download v.redd.it video: {url}")
             return None
 
         # Skip Reddit gallery/comment links but allow direct media URLs
         if 'reddit.com/gallery/' in url or 'reddit.com/comments/' in url:
             logger.info(f"Skipping Reddit gallery/comment link: {url}")
             return None
+
+        logger.info(f"URL domain check: {url} -> is_external will be checked")
 
         parsed_url = urlparse(url)
         domain = parsed_url.netloc.lower().replace('www.', '')
@@ -177,6 +193,7 @@ async def download_with_ytdlp(url, post_id):
 async def download_direct(url, post_id):
     """Download media directly via HTTP"""
     extension = get_file_extension(url)
+    logger.info(f"download_direct: url={url}, extension={extension}")
     output_path = f"temp/{post_id}{extension}"
 
     headers = {

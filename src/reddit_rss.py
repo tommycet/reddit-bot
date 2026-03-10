@@ -51,6 +51,45 @@ class RedditRSSClient:
             sort_type = 'hot'
         return self.BASE_RSS_URL.format(subreddit=subreddit, sort=sort_type)
 
+    def _extract_media_url(self, entry):
+        """Extract direct media URL from RSS entry - only return if it's a direct video/image URL"""
+        # Check enclosures first (common for videos/images)
+        if hasattr(entry, 'enclosures') and entry.enclosures:
+            for enc in entry.enclosures:
+                if 'href' in enc:
+                    url = enc['href']
+                    # Only return if it's a direct video URL (not thumbnail)
+                    if any(ext in url.lower() for ext in ['.mp4', '.webm']):
+                        return url
+
+        # Check media_content
+        if hasattr(entry, 'media_content') and entry.media_content:
+            for media in entry.media_content:
+                if 'url' in media:
+                    url = media['url']
+                    if any(ext in url.lower() for ext in ['.mp4', '.webm']):
+                        return url
+
+        # Parse content HTML for direct video URLs only (not thumbnails)
+        content = entry.get('content', [{}])[0].get('value', '') if hasattr(entry, 'content') else ''
+        if not content:
+            content = entry.get('description', '')
+
+        # Look for direct video URLs in content (v.redd.it or direct mp4)
+        video_patterns = [
+            r'https?://v\.redd\.it/[\w/.-]+',
+            r'https?://[^\s"\']+\.mp4',
+            r'https?://[^\s"\']+\.webm',
+        ]
+
+        for pattern in video_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            if matches:
+                return matches[0]
+
+        # Return None for thumbnail-only URLs (external-preview.redd.it are thumbnails)
+        return None
+
     def _parse_description(self, description: str) -> dict:
         data = {
             'score': 0,
@@ -128,8 +167,17 @@ class RedditRSSClient:
                     desc_data = self._parse_description(entry.get('description', ''))
                     link = entry.get('link', '')
                     permalink = link.replace('https://www.reddit.com', '')
+
+                    # Determine if this is a self post
                     is_self = 'selftext=' in entry.get('description', '') or '/comments/' in link
+                    # Check if it's a gallery
                     is_gallery = '/gallery/' in link
+
+                    # Extract actual media URL from the entry
+                    media_url = self._extract_media_url(entry)
+                    logger.info(f"RSS Post: link={link}, media_url={media_url}")
+                    # Use media URL if found, otherwise use the Reddit post link
+                    url = media_url if media_url else link
 
                     author = entry.get('author', '[deleted]')
                     if 'submitted by' in entry.get('description', ''):
@@ -145,7 +193,7 @@ class RedditRSSClient:
 
                     post = RSSPost(
                         title=entry.get('title', ''),
-                        url=link,
+                        url=url,
                         permalink=permalink,
                         score=desc_data['score'],
                         num_comments=desc_data['num_comments'],
@@ -155,7 +203,9 @@ class RedditRSSClient:
                         selftext=desc_data['selftext'],
                         over_18=desc_data['over_18'],
                         subreddit=subreddit,
-                        is_gallery=is_gallery
+                        is_gallery=is_gallery,
+                        gallery_data=entry.get('media_metadata', {}),
+                        media_metadata=entry.get('media_metadata', {})
                     )
                     posts.append(post)
 
