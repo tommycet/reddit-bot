@@ -28,8 +28,10 @@ async def delete_file(filepath):
         except Exception as e:
             logger.error(f"Failed to delete {filepath}: {e}")
 
+VALID_SORT_TYPES = ['new', 'rising', 'hot', 'top', 'controversial']
+
 def validate_sort_type(sort_type):
-    return sort_type.lower() in ['new', 'rising', 'hot', 'top']
+    return sort_type.lower() in VALID_SORT_TYPES
 
 def validate_post_count(count):
     try:
@@ -62,7 +64,16 @@ def get_file_extension(url):
     return '.mp4'
 
 def is_adult_content(post):
-    return post.over_18 or post.subreddit.over18
+    """Check if post or subreddit is marked as NSFW/adult content"""
+    try:
+        over_18_value = getattr(post, 'over_18', False)
+        if isinstance(over_18_value, bool):
+            return over_18_value
+        elif isinstance(over_18_value, str):
+            return over_18_value.lower() in ('true', '1', 'yes', 'nsfw')
+        return bool(over_18_value)
+    except Exception:
+        return False
 
 def setup_logging():
     import logging.config

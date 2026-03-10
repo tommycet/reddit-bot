@@ -39,7 +39,10 @@ TEMP_DIR = 'temp'
 LOGS_DIR = 'logs'
 
 # Valid sort types
-VALID_SORT_TYPES = ['new', 'rising', 'hot', 'top']
+VALID_SORT_TYPES = ['new', 'rising', 'hot', 'top', 'controversial']
+
+# Concurrent processing
+MAX_CONCURRENT_DOWNLOADS = int(os.getenv('MAX_CONCURRENT_DOWNLOADS', '3'))
 
 # Required environment variables
 REQUIRED_ENV_VARS = [

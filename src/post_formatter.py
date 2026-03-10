@@ -6,38 +6,69 @@ from src.media_downloader import SUPPORTED_PLATFORMS
 
 logger = logging.getLogger(__name__)
 
+def get_post_author(post):
+    """Get author name from post (handles both PRAW and RSS)"""
+    try:
+        if hasattr(post.author, 'name'):
+            return post.author.name
+        return str(post.author) if post.author else '[deleted]'
+    except:
+        return '[deleted]'
+
+def get_subreddit_name(post):
+    """Get subreddit name from post (handles both PRAW and RSS)"""
+    try:
+        if hasattr(post.subreddit, 'display_name'):
+            return post.subreddit.display_name
+        return str(post.subreddit) if post.subreddit else 'unknown'
+    except:
+        return 'unknown'
+
+def get_subreddit_prefixed(post):
+    """Get prefixed subreddit name (handles both PRAW and RSS)"""
+    try:
+        if hasattr(post.subreddit, 'display_name_prefixed'):
+            return post.subreddit.display_name_prefixed
+        sub_name = get_subreddit_name(post)
+        return f"r/{sub_name}"
+    except:
+        return 'r/unknown'
+
 async def create_post_embed(post, media_path=None):
     adult_indicator = "🔞 " if is_adult_content(post) else ""
-    
+
     title = f"{adult_indicator}{post.title}"
-    
+
     description = ""
     if post.selftext:
         description = truncate_text(post.selftext, 2000)
+
+    subreddit_name = get_subreddit_name(post)
     
     embed = discord.Embed(
         title=title,
         url=f"https://reddit.com{post.permalink}",
         description=description,
-        color=get_subreddit_color(post.subreddit.display_name)
+        color=get_subreddit_color(subreddit_name)
     )
-    
+
+    author_name = get_post_author(post)
     embed.set_author(
-        name=f"u/{post.author.name if post.author else '[deleted]'}",
-        url=f"https://reddit.com/u/{post.author.name if post.author else ''}"
+        name=f"u/{author_name}",
+        url=f"https://reddit.com/u/{author_name}"
     )
-    
+
     score_str = f"⬆️ {format_number(post.score)}"
     comments_str = f"💬 {format_number(post.num_comments)}"
-    
+
     embed.add_field(name="Score", value=score_str, inline=True)
     embed.add_field(name="Comments", value=comments_str, inline=True)
-    
-    subreddit_name = post.subreddit.display_name_prefixed
+
+    subreddit_prefixed = get_subreddit_prefixed(post)
     embed.set_footer(
-        text=f"{subreddit_name} • Posted {format_timestamp(post.created_utc)}"
+        text=f"{subreddit_prefixed} • Posted {format_timestamp(post.created_utc)}"
     )
-    
+
     embed.timestamp = datetime.utcfromtimestamp(post.created_utc)
     
     is_external_link = False
