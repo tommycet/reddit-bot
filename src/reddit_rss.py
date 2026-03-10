@@ -53,14 +53,13 @@ class RedditRSSClient:
         return self.BASE_RSS_URL.format(subreddit=subreddit, sort=sort_type)
 
     def _extract_media_url(self, entry):
-        """Extract direct media URL from RSS entry - only return if it's a direct video/image URL"""
+        """Extract direct media URL from RSS entry - videos and images"""
         # Check enclosures first (common for videos/images)
         if hasattr(entry, 'enclosures') and entry.enclosures:
             for enc in entry.enclosures:
                 if 'href' in enc:
                     url = enc['href']
-                    # Only return if it's a direct video URL (not thumbnail)
-                    if any(ext in url.lower() for ext in ['.mp4', '.webm']):
+                    if any(ext in url.lower() for ext in ['.mp4', '.webm', '.jpg', '.jpeg', '.png', '.gif']):
                         return url
 
         # Check media_content
@@ -68,27 +67,31 @@ class RedditRSSClient:
             for media in entry.media_content:
                 if 'url' in media:
                     url = media['url']
-                    if any(ext in url.lower() for ext in ['.mp4', '.webm']):
+                    if any(ext in url.lower() for ext in ['.mp4', '.webm', '.jpg', '.jpeg', '.png', '.gif']):
                         return url
 
-        # Parse content HTML for direct video URLs only (not thumbnails)
+        # Parse content HTML for direct media URLs (not thumbnails)
         content = entry.get('content', [{}])[0].get('value', '') if hasattr(entry, 'content') else ''
         if not content:
             content = entry.get('description', '')
 
-        # Look for direct video URLs in content (v.redd.it or direct mp4)
-        video_patterns = [
+        # Look for direct media URLs in content
+        media_patterns = [
+            r'https?://i\.redd\.it/[\w/.-]+\.(?:jpg|jpeg|png|gif)',
             r'https?://v\.redd\.it/[\w/.-]+',
             r'https?://[^\s"\']+\.mp4',
             r'https?://[^\s"\']+\.webm',
         ]
 
-        for pattern in video_patterns:
+        for pattern in media_patterns:
             matches = re.findall(pattern, content, re.IGNORECASE)
             if matches:
-                return matches[0]
+                # Skip thumbnail URLs (external-preview.redd.it are thumbnails)
+                for match in matches:
+                    if 'external-preview.redd.it' not in match and 'preview.redd.it' not in match:
+                        return match
 
-        # Return None for thumbnail-only URLs (external-preview.redd.it are thumbnails)
+        # Return None if no direct media URL found
         return None
 
     async def _fetch_original_url(self, permalink: str) -> Optional[str]:

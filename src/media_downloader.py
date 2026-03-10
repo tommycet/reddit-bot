@@ -87,15 +87,15 @@ async def download_media(url, post_id, post=None):
                     logger.info(f"Trying yt-dlp with v.redd.it URL: {url}")
                     filepath = await download_with_ytdlp(url, post_id)
 
-        elif 'reddit.com/gallery/' in url:
+        elif 'reddit.com' in url and '/gallery/' in url:
             logger.info(f"Skipping Reddit gallery link: {url}")
             return None
 
-        elif 'reddit.com/comments/' in url:
+        elif 'reddit.com' in url and '/comments/' in url:
             # This might be a post with an external embed (YouTube, RedGifs, etc.)
             # where the .json API failed to return the original URL.
             # Try yt-dlp with the Reddit URL — it can extract embedded videos.
-            logger.info(f"Trying yt-dlp for Reddit comment URL (may have external embed): {url}")
+            logger.info(f"Trying yt-dlp for Reddit post URL (may have external embed): {url}")
             filepath = await download_with_ytdlp(url, post_id)
 
         else:
