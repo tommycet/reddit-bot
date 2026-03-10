@@ -26,20 +26,8 @@ SUPPORTED_PLATFORMS = {
 MAX_FILE_SIZE_MB = MAX_FILE_SIZE_BYTES / (1024 * 1024)
 
 async def download_media(url, post_id, post=None):
-    """
-    Download media with automatic compression and GIF conversion
-    
-    Flow:
-    1. Download media (video/image)
-    2. If video > 8MB → compress
-    3. If video < 60s → convert to GIF
-    4. Return final path
-    
-    Returns:
-        Path to media file, or None if download/conversion fails
-    """
     ensure_temp_dir()
-    
+
     try:
         # Handle Reddit gallery
         if post and hasattr(post, 'is_gallery') and post.is_gallery:
@@ -66,7 +54,15 @@ async def download_media(url, post_id, post=None):
             logger.warning(f"Could not extract image from gallery {post_id}")
             return None
 
-        # Skip Reddit gallery/comment links
+        # Handle Reddit direct media URLs (i.redd.it for images, v.redd.it for videos)
+        if 'i.redd.it' in url or 'v.redd.it' in url:
+            logger.info(f"Downloading Reddit direct media: {url}")
+            filepath = await download_direct(url, post_id)
+            if filepath and os.path.exists(filepath):
+                return filepath
+            return None
+
+        # Skip Reddit gallery/comment links but allow direct media URLs
         if 'reddit.com/gallery/' in url or 'reddit.com/comments/' in url:
             logger.info(f"Skipping Reddit gallery/comment link: {url}")
             return None
@@ -94,14 +90,14 @@ async def download_media(url, post_id, post=None):
         if filepath.endswith('.mp4') and file_size_mb > MAX_FILE_SIZE_MB:
             logger.warning(f"Video too large ({file_size_mb:.2f}MB), compressing...")
             compressed_path = await compress_video_if_needed(filepath, post_id)
-            
+
             if compressed_path and os.path.exists(compressed_path):
                 # Delete original
                 if filepath != compressed_path:
                     os.remove(filepath)
-                    filepath = compressed_path
-                    file_size_mb = get_file_size_mb(filepath)
-                    logger.info(f"Video compressed: {filepath} ({file_size_mb:.2f}MB)")
+                filepath = compressed_path
+                file_size_mb = get_file_size_mb(filepath)
+                logger.info(f"Video compressed: {filepath} ({file_size_mb:.2f}MB)")
             else:
                 logger.error(f"Compression failed for {filepath}, skipping post")
                 if os.path.exists(filepath):
@@ -113,7 +109,7 @@ async def download_media(url, post_id, post=None):
             if should_convert_to_gif(filepath):
                 logger.info(f"Video < 60s, converting to GIF: {filepath}")
                 gif_path = await convert_to_gif(filepath, post_id)
-                
+
                 if gif_path and os.path.exists(gif_path):
                     # Delete original video
                     os.remove(filepath)
