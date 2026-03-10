@@ -28,18 +28,18 @@ This bot allows you to scrape posts from any Reddit subreddit and automatically 
 
 ## Features
 
-✅ **Dynamic Subreddit Scraping** - Scrape any subreddit on demand
-✅ **Multiple Sort Types** - Supports new, rising, hot, and top posts
-✅ **Hybrid Fetching (RSS + PRAW)** - RSS feeds for unlimited rate, PRAW as fallback
-✅ **Auto Video Compression** - Videos automatically compressed to fit Discord's 8MB limit
-✅ **Auto GIF Conversion** - Videos under 60s converted to GIF (720p, 30fps)
-✅ **External Media Support** - Downloads and sends media from various platforms
-✅ **Sequential Posting** - Posts are sent one by one with proper delays
-✅ **Auto Cleanup** - All media files deleted immediately after sending
-✅ **Discord Embeds** - Reddit-style post formatting
-✅ **Progress Tracking** - Real-time status updates during scraping
-✅ **Error Recovery** - Continues processing even if individual posts fail
-✅ **Rate Limit Compliance** - RSS eliminates rate limits, PRAW fallback with exponential backoff
+1. **Dynamic Subreddit Scraping** - Scrape any subreddit on demand
+2. **Multiple Sort Types** - Supports new, rising, hot, and top posts
+3. **Hybrid Fetching (RSS + PRAW)** - RSS feeds for unlimited rate, PRAW as fallback
+4. **Auto Video Compression** - Videos automatically compressed to fit Discord's 8MB limit
+5. **Auto GIF Conversion** - Videos under 60s converted to GIF (720p, 30fps)
+6. **External Media Support** - Downloads and sends media from various platforms
+7. **Sequential Posting** - Posts are sent one by one with proper delays
+8. **Auto Cleanup** - All media files deleted immediately after sending
+9. **Discord Embeds** - Reddit-style post formatting
+10. **Progress Tracking** - Real-time status updates during scraping
+11. **Error Recovery** - Continues processing even if individual posts fail
+12. **Rate Limit Compliance** - RSS eliminates rate limits, PRAW fallback with exponential backoff
 
 ---
 
