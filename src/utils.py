@@ -5,11 +5,13 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
 def ensure_temp_dir():
-    Path('temp').mkdir(exist_ok=True)
+    Path("temp").mkdir(exist_ok=True)
+
 
 def clean_temp_files():
-    temp_dir = Path('temp')
+    temp_dir = Path("temp")
     if temp_dir.exists():
         for file in temp_dir.iterdir():
             if file.is_file():
@@ -18,6 +20,7 @@ def clean_temp_files():
                     logger.info(f"Deleted temp file: {file}")
                 except Exception as e:
                     logger.error(f"Failed to delete {file}: {e}")
+
 
 async def delete_file(filepath):
     if filepath and os.path.exists(filepath):
@@ -28,10 +31,13 @@ async def delete_file(filepath):
         except Exception as e:
             logger.error(f"Failed to delete {filepath}: {e}")
 
-VALID_SORT_TYPES = ['new', 'rising', 'hot', 'top', 'controversial']
+
+VALID_SORT_TYPES = ["new", "rising", "hot", "top", "controversial"]
+
 
 def validate_sort_type(sort_type):
     return sort_type.lower() in VALID_SORT_TYPES
+
 
 def validate_post_count(count):
     try:
@@ -40,73 +46,95 @@ def validate_post_count(count):
     except ValueError:
         return False, 0
 
+
 def format_number(num):
     if num >= 1000000:
-        return f"{num/1000000:.1f}M"
+        return f"{num / 1000000:.1f}M"
     elif num >= 1000:
-        return f"{num/1000:.1f}K"
+        return f"{num / 1000:.1f}K"
     return str(num)
+
 
 def truncate_text(text, max_length=4000):
     if not text:
         return ""
     if len(text) <= max_length:
         return text
-    return text[:max_length-3] + "..."
+    return text[: max_length - 3] + "..."
+
 
 def get_file_extension(url):
     if not url:
         return None
-    url_lower = url.lower().split('?')[0]
-    for ext in ['.mp4', '.webm', '.gif', '.jpg', '.jpeg', '.png']:
+    url_lower = url.lower().split("?")[0]
+    for ext in [".mp4", ".webm", ".gif", ".jpg", ".jpeg", ".png"]:
         if url_lower.endswith(ext):
             return ext
-    return '.mp4'
+    return ".mp4"
+
 
 def is_adult_content(post):
     """Check if post or subreddit is marked as NSFW/adult content"""
     try:
-        over_18_value = getattr(post, 'over_18', False)
+        over_18_value = getattr(post, "over_18", False)
         if isinstance(over_18_value, bool):
             return over_18_value
         elif isinstance(over_18_value, str):
-            return over_18_value.lower() in ('true', '1', 'yes', 'nsfw')
+            return over_18_value.lower() in ("true", "1", "yes", "nsfw")
         return bool(over_18_value)
     except Exception:
         return False
 
+
 def setup_logging():
     import logging.config
+    import sys
+    import io
 
-    Path('logs').mkdir(exist_ok=True)
-    Path('temp').mkdir(exist_ok=True)
+    Path("logs").mkdir(exist_ok=True)
+    Path("temp").mkdir(exist_ok=True)
+    Path("data").mkdir(exist_ok=True)
 
-    logging.config.dictConfig({
-        'version': 1,
-        'disable_existing_loggers': False,
-        'formatters': {
-            'standard': {
-                'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    # Fix Unicode encoding on Windows console
+    if sys.platform == "win32":
+        # Wrap stdout/stderr with UTF-8 encoding
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, encoding="utf-8", errors="replace"
+        )
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer, encoding="utf-8", errors="replace"
+        )
+
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "standard": {
+                    "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+                },
+                "detailed": {
+                    "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s\n  -> File: %(filename)s:%(lineno)d\n  -> Function: %(funcName)s"
+                },
             },
-            'detailed': {
-                'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s\n  -> File: %(filename)s:%(lineno)d\n  -> Function: %(funcName)s'
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "standard",
+                    "level": "INFO",
+                    "stream": "ext://sys.stdout",
+                },
+                "file": {
+                    "class": "logging.FileHandler",
+                    "filename": "logs/bot.log",
+                    "formatter": "detailed",
+                    "level": "DEBUG",
+                    "encoding": "utf-8",
+                },
             },
-        },
-        'handlers': {
-            'console': {
-                'class': 'logging.StreamHandler',
-                'formatter': 'detailed',
-                'level': 'DEBUG',
+            "root": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
             },
-            'file': {
-                'class': 'logging.FileHandler',
-                'filename': 'logs/bot.log',
-                'formatter': 'detailed',
-                'level': 'DEBUG',
-            },
-        },
-        'root': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG',
-        },
-    })
+        }
+    )

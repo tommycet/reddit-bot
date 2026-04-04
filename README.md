@@ -227,7 +227,7 @@ python bot.py
 You should see:
 ```
 ✅ BotName#1234 is online and ready!
-📝 Use !scrape <subreddit> <sort> <count> to start scraping
+📝 Use /scrape <subreddit> <sort> <count> to start scraping
 ```
 
 ### Basic Commands
@@ -235,38 +235,41 @@ You should see:
 #### Scrape Posts
 
 ```
-!scrape <subreddit> <sort_type> <count>
+/scrape <subreddit> <sort_type> <count>
 ```
 
 **Parameters:**
-- `subreddit` - Subreddit name (with or without "r/")
-- `sort_type` - One of: `new`, `rising`, `hot`, `top`
+- `subreddit` - Subreddit name (without "r/")
+- `sort_type` - One of: `Hot`, `New`, `Rising`, `Top`, `Controversial`
 - `count` - Number of posts (1-25)
 
 **Examples:**
 
 ```bash
 # Scrape 10 hot posts from r/memes
-!scrape memes hot 10
+/scrape memes Hot 10
 
 # Scrape 5 new posts from r/technology
-!scrape technology new 5
+/scrape technology New 5
 
 # Scrape 25 top posts from r/funny
-!scrape funny top 25
+/scrape funny Top 25
 
 # Scrape 15 rising posts from r/gaming
-!scrape gaming rising 15
+/scrape gaming Rising 15
 
-# Subreddit with r/ prefix also works
-!scrape r/pics hot 10
+# Scrape controversial posts from r/pics
+/scrape pics Controversial 10
 ```
 
 ### Other Commands
 
 ```
-!help    - Show help message with all commands
-!status  - Check bot status and connection
+/help    - Show help message with all commands
+/status  - Check bot status and connection
+/random  - Get a random post from a subreddit
+/subreddit - Get info about a subreddit
+/search  - Search for posts in a subreddit
 ```
 
 ---
@@ -304,11 +307,16 @@ reddit-bot/
 │   ├── __init__.py          # Package initialization
 │   ├── bot.py               # Discord bot & command handlers
 │   ├── reddit_client.py     # Reddit API wrapper (PRAW)
+│   ├── reddit_rss.py        # RSS-based Reddit fetching
 │   ├── media_downloader.py  # External media download logic
 │   ├── post_formatter.py    # Discord embed formatting
-│   └── utils.py             # Utility functions
+│   ├── gif_converter.py     # GIF conversion & video compression
+│   ├── utils.py             # Utility functions
+│   ├── database.py          # SQLite database for tracking scraped posts
+│   └── scraper_manager.py   # Continuous scraping manager
 ├── temp/                    # Temporary media storage (auto-cleaned)
 ├── logs/                    # Bot logs directory
+├── data/                    # Database storage (scraper.db)
 ├── .env                     # Your credentials (not in git)
 ├── .env.example             # Template for .env
 ├── .gitignore               # Git ignore file
@@ -378,6 +386,80 @@ The bot uses a smart hybrid approach:
 
 **Caching:** Subreddit validation cached for 1 hour to reduce API calls.
 
+### 🔄 Continuous Scraping (Never Stops Until You Say So!)
+
+The bot now supports **continuous scraping** that runs **forever** until you manually stop it!
+
+**Two Modes Based on Sort Type:**
+
+#### 📈 Mode 1: Hot/New/Rising (Live Feed Mode)
+Continuously monitors for **new posts** as they come in:
+- Polls subreddit every `poll_interval` seconds (default: 30s)
+- Sends new posts immediately when found
+- Waits when no new posts (doesn't stop, just pauses polling)
+- **Perfect for:** Live monitoring, news feeds, trending content
+
+#### 📊 Mode 2: Top/Controversial (Archive Mode)
+Goes through **all posts** in the list without stopping:
+- Sends posts linearly from top to bottom
+- When reaching the end, cycles back through
+- Skips already-sent posts (tracked in database)
+- **Perfect for:** Binge-reading, archiving, catching up on all-time posts
+
+**How It Works:**
+
+**Single Subreddit:**
+```
+1. Bot fetches batch of posts from r/memes
+2. Checks database - sends only new posts
+3. For Hot/New/Rising: waits 30s, then checks again
+4. For Top/Controversial: moves to next batch
+5. REPEATS FOREVER until you run /scrape-continuous-stop
+```
+
+**Multiple Subreddits (Round-Robin):**
+```
+/scrape-continuous-start memes,funny,technology Hot
+
+Loop:
+  → Check r/memes for new posts
+  → Check r/funny for new posts  
+  → Check r/technology for new posts
+  → Wait poll_interval
+  → REPEAT FOREVER
+```
+
+**Key Features:**
+- ✅ **Never stops automatically** - runs until you use `/scrape-continuous-stop`
+- ✅ **No duplicates** - tracks all sent posts in database
+- ✅ **Resumes on restart** - picks up exactly where it left off
+- ✅ **Smart polling** - respects rate limits with configurable intervals
+- ✅ **Round-robin** - cycles through multiple subreddits fairly
+
+**Database Management:**
+- Database auto-created at `data/scraper.db`
+- Stores: post ID, subreddit, sort type, timestamp
+- Prevents duplicate sending even across bot restarts
+- Delete the file anytime to reset tracking
+
+**Example Scenarios:**
+
+**Live News Monitoring:**
+```
+/scrape-continuous-start worldnews,news New
+→ Monitors both subreddits 24/7
+→ Sends new posts as they appear
+→ Runs forever until stopped
+```
+
+**Best of All Time Archive:**
+```
+/scrape-continuous-start gaming,pcgaming Top
+→ Goes through top posts of all time
+→ Never stops, cycles when reaches end
+→ Perfect for catching up on classic posts
+```
+
 ---
 
 ## Security Notes
@@ -391,10 +473,11 @@ The bot uses a smart hybrid approach:
 
 ### ✅ Data Privacy
 
-- **No data is stored permanently**
-- Media files are stored in `temp/` directory temporarily
-- Files are deleted immediately after sending to Discord
-- Bot logs don't contain sensitive information
+- **Media files are temporary**: Stored in `temp/` directory and deleted immediately after sending
+- **Post tracking**: The database (`data/scraper.db`) only stores post IDs to prevent duplicates (no personal data)
+- **No credentials in logs**: Bot logs don't contain sensitive information
+- **Database is local**: SQLite database is stored locally and never uploaded anywhere
+- **Optional cleanup**: You can delete `data/scraper.db` anytime to reset tracking
 
 ### ✅ Rate Limiting
 
@@ -422,7 +505,7 @@ The bot uses a smart hybrid approach:
 **Solutions:**
 1. Check subreddit name spelling
 2. Subreddit might be private or quarantined
-3. Try without "r/" prefix: `!scrape memes` instead of `!scrape r/memes`
+3. Try different spelling: `/scrape memes` (without the "r/" prefix)
 
 #### ❌ "Access denied to subreddit"
 
@@ -501,50 +584,224 @@ The bot uses a smart hybrid approach:
 
 ## Commands Reference
 
-### 📥 !scrape
+All commands use Discord **Slash Commands** (type `/` in the chat to see available commands).
+
+### 📥 /scrape
 
 Scrape posts from a subreddit and send to Discord.
 
 **Syntax:**
 ```
-!scrape <subreddit> <sort_type> <count>
+/scrape <subreddit> <sort_type> <count>
 ```
 
 **Parameters:**
 | Parameter | Type | Required | Values |
 |-----------|------|----------|--------|
-| subreddit | string | ✅ Yes | Any subreddit name (with or without "r/") |
-| sort_type | string | ⭕ No | `new`, `rising`, `hot`, `top` (default: `hot`) |
+| subreddit | string | ✅ Yes | Any subreddit name (without "r/") |
+| sort_type | choice | ⭕ No | `Hot`, `New`, `Rising`, `Top`, `Controversial` (default: `Hot`) |
 | count | integer | ⭕ No | 1-25 (default: 5) |
 
 **Examples:**
 ```
-!scrape memes              # Scrapes 5 hot posts from r/memes
-!scrape technology new     # Scrapes 5 new posts from r/technology
-!scrape funny top 10       # Scrapes 10 top posts from r/funny
-!scrape r/gaming hot 25    # Scrapes 25 hot posts from r/gaming
+/scrape memes Hot              # Scrapes 5 hot posts from r/memes
+/scrape technology New 10      # Scrapes 10 new posts from r/technology
+/scrape funny Top 10           # Scrapes 10 top posts from r/funny
+/scrape gaming Rising 15       # Scrapes 15 rising posts from r/gaming
 ```
 
 ---
 
-### ❓ !help
+### 🔄 /scrape-continuous-start
+
+Start continuous scraping from multiple subreddits. **Runs indefinitely until you manually stop it!**
+
+**Features:**
+- **Runs Forever**: Continuously scrapes until you use `/scrape-continuous-stop`
+- **Linear Order**: Goes through posts one by one in chronological order
+- **Multi-Subreddit**: Scrapes from each subreddit in rotation (A→B→C→A→B→C...)
+- **Database Tracking**: Tracks sent posts to prevent duplicates across restarts
+- **Smart Behavior**:
+  - **Hot/New/Rising**: Polls continuously for NEW posts, waits when none found
+  - **Top/Controversial**: Goes through ALL posts linearly without stopping
+
+**Syntax:**
+```
+/scrape-continuous-start <subreddits> <sort_type> [batch_size] [delay_seconds] [poll_interval]
+```
+
+**Parameters:**
+| Parameter | Type | Required | Values |
+|-----------|------|----------|--------|
+| subreddits | string | ✅ Yes | Comma-separated list (max 10) |
+| sort_type | choice | ⭕ No | `Hot`, `New`, `Rising`, `Top`, `Controversial` (default: `Hot`) |
+| batch_size | integer | ⭕ No | 1-10 posts to check per fetch (default: 5) |
+| delay_seconds | float | ⭕ No | Seconds between posts (default: 2.0) |
+| poll_interval | float | ⭕ No | Seconds to wait when no new posts (default: 30.0, min: 10) |
+
+**Examples:**
+```
+# Continuously poll for new posts from r/memes
+/scrape-continuous-start memes Hot
+
+# Monitor multiple subreddits for new posts
+/scrape-continuous-start memes,funny,technology New
+
+# Go through all top posts (doesn't stop!)
+/scrape-continuous-start gaming Top
+
+# With custom settings
+/scrape-continuous-start gaming,pcgaming New 3 1.5 60
+```
+
+**How it works by Sort Type:**
+
+**Hot/New/Rising (Time-based):**
+1. Fetches latest posts from the subreddit
+2. Sends any posts newer than the last one sent
+3. If no new posts, waits `poll_interval` seconds (default: 30s)
+4. Checks again... repeats FOREVER until stopped
+5. On restart: automatically resumes from where it left off
+
+**Top/Controversial (Static):**
+1. Goes through posts linearly from top to bottom
+2. Sends posts one by one, tracking in database
+3. When reaching the end, continues from the beginning
+4. Never stops - keeps cycling through (skipping already-sent posts)
+5. On restart: continues from last position
+
+**Round-Robin Multi-Subreddit:**
+```
+With subreddits: memes, funny, technology
+Cycle: memes(1) → funny(1) → technology(1) → memes(2) → funny(2) → technology(2) → ...
+```
+
+---
+
+### 🛑 /scrape-continuous-stop
+
+Stop all active continuous scraping tasks immediately.
+
+**Syntax:**
+```
+/scrape-continuous-stop
+```
+
+---
+
+### 📊 /scrape-continuous-status
+
+Check the status of all active continuous scraping sessions.
+
+**Shows:**
+- Whether scraping is currently running
+- Which subreddits are being scraped
+- When each session started
+- Number of posts sent this session
+- Total posts tracked in database per subreddit
+
+**Syntax:**
+```
+/scrape-continuous-status
+```
+
+---
+
+### 🗑️ /scrape-continuous-clear
+
+Clear the tracking history for a subreddit. Use this if you want to start scraping from the beginning again (reset all progress).
+
+**Syntax:**
+```
+/scrape-continuous-clear <subreddit> [sort_type]
+```
+
+**Parameters:**
+| Parameter | Type | Required | Values |
+|-----------|------|----------|--------|
+| subreddit | string | ✅ Yes | Subreddit name |
+| sort_type | string | ⭕ No | `Hot`, `New`, `Rising`, `Top`, `Controversial` (leave blank to clear all sorts) |
+
+**Examples:**
+```
+# Clear all tracking for a subreddit
+/scrape-continuous-clear memes
+
+# Clear only Hot tracking for a subreddit
+/scrape-continuous-clear memes Hot
+```
+
+**Note:** This deletes the tracking data from the database. The next time you start continuous scraping for this subreddit, it will start from the beginning as if never scraped before.
+
+---
+
+### 🎲 /random
+
+Get a random post from a subreddit.
+
+**Syntax:**
+```
+/random <subreddit>
+```
+
+**Parameters:**
+| Parameter | Type | Required | Values |
+|-----------|------|----------|--------|
+| subreddit | string | ✅ Yes | Any subreddit name |
+
+---
+
+### 📋 /subreddit
+
+Get info about a subreddit.
+
+**Syntax:**
+```
+/subreddit <name>
+```
+
+**Parameters:**
+| Parameter | Type | Required | Values |
+|-----------|------|----------|--------|
+| name | string | ✅ Yes | Any subreddit name |
+
+---
+
+### 🔍 /search
+
+Search for posts in a subreddit.
+
+**Syntax:**
+```
+/search <subreddit> <query>
+```
+
+**Parameters:**
+| Parameter | Type | Required | Values |
+|-----------|------|----------|--------|
+| subreddit | string | ✅ Yes | Any subreddit name |
+| query | string | ✅ Yes | Search text |
+
+---
+
+### ❓ /help
 
 Display help information and available commands.
 
 **Syntax:**
 ```
-!help
+/help
 ```
 
 ---
 
-### 📊 !status
+### 📊 /status
 
 Check bot status, connection, and settings.
 
 **Syntax:**
 ```
-!status
+/status
 ```
 
 **Shows:**

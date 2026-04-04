@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 temp/
 logs/
+data/*.db
+data/*.db-journal
 *.log
 .vscode/
 .idea/
